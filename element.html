@@ -87,7 +87,7 @@
       display:flex;
       flex-wrap:wrap;
       gap:8px;
-      margin: 12px 0 14px;
+      margin: 12px 0 10px;
     }
     .chip{
       display:inline-flex;
@@ -110,8 +110,16 @@
       background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
       border-radius: var(--radius);
       padding: 12px;
-      box-shadow: var(--shadow);
+      box-shadow: 0 10px 30px rgba(0,0,0,.45);
       overflow:hidden;
+    }
+
+    /* ===== Mobile friendly scroll container ===== */
+    .tableScroll{
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 6px;
     }
 
     .grid{
@@ -119,6 +127,9 @@
       grid-template-columns: repeat(18, minmax(var(--cellMin), 1fr));
       gap: var(--gap);
       align-items:stretch;
+
+      /* 关键：保持可读尺寸，通过横向滚动适配手机 */
+      min-width: 980px;
     }
 
     .cell{
@@ -162,6 +173,8 @@
       grid-template-columns: repeat(15, minmax(var(--cellMin), 1fr));
       gap: var(--gap);
       align-items:stretch;
+
+      min-width: 820px;
     }
 
     /* 分类配色 */
@@ -198,7 +211,7 @@
       border: 1px solid rgba(255,255,255,.16);
       background: linear-gradient(180deg, rgba(17,24,39,.98), rgba(15,23,42,.98));
       border-radius: 16px;
-      box-shadow: var(--shadow);
+      box-shadow: 0 10px 30px rgba(0,0,0,.45);
       padding: 14px 14px 12px;
     }
 
@@ -268,6 +281,30 @@
       .toolbar{ justify-content:flex-start; }
       .kv{ grid-template-columns: 104px 1fr; }
     }
+
+    /* 手机端：字号/弹窗更友好，但表格仍通过横向滚动保证可读 */
+    @media (max-width: 520px){
+      :root{
+        --cellMin: 44px;
+        --gap: 5px;
+      }
+      .wrap{ margin-top: 14px; }
+      .board{ padding: 10px; }
+      .cell{ min-height: 56px; }
+      .sym{ font-size: 17px; }
+
+      .modal{
+        width: 100%;
+        max-height: 86vh;
+        border-radius: 16px;
+      }
+    }
+
+    /* iPad 竖屏：缩小一点最小宽度，减少滑动需求 */
+    @media (min-width: 521px) and (max-width: 900px){
+      .grid{ min-width: 860px; }
+      .fgrid{ min-width: 720px; }
+    }
   </style>
 </head>
 <body>
@@ -292,14 +329,20 @@
 
     <div class="legend" id="legend"></div>
 
+    <div class="sub" id="scrollHint" style="margin:6px 0 10px;">
+      手机上可左右滑动查看完整周期表。
+    </div>
+
     <div class="board">
-      <div class="grid" id="mainGrid" aria-label="Periodic Table"></div>
+      <div class="tableScroll" id="tableScroll">
+        <div class="grid" id="mainGrid" aria-label="Periodic Table"></div>
 
-      <div class="rowTitle"><span id="lanTitle">镧系（57–71）</span><span class="line"></span></div>
-      <div class="fgrid" id="lanGrid"></div>
+        <div class="rowTitle"><span id="lanTitle">镧系（57–71）</span><span class="line"></span></div>
+        <div class="fgrid" id="lanGrid"></div>
 
-      <div class="rowTitle"><span id="actTitle">锕系（89–103）</span><span class="line"></span></div>
-      <div class="fgrid" id="actGrid"></div>
+        <div class="rowTitle"><span id="actTitle">锕系（89–103）</span><span class="line"></span></div>
+        <div class="fgrid" id="actGrid"></div>
+      </div>
     </div>
   </div>
 
@@ -345,7 +388,7 @@
 
   function catClass(catKey){ return "cat-" + (catKey || "unknown"); }
 
-  // 元素数据（为简洁，这里保持与你之前版本一致）
+  // 元素数据（可后续继续补充 phonetic 字段为 IPA）
   const E = [
     {Z:1,  symbol:"H",  name_zh:"氢",   name_en:"Hydrogen",   group:1,  period:1, category:"nonmetal",  mass:"1.008",  phonetic:"", econf:"1s1", state:{zh:"气",en:"gas"}},
     {Z:2,  symbol:"He", name_zh:"氦",   name_en:"Helium",     group:18, period:1, category:"noble",     mass:"4.0026", phonetic:"", econf:"1s2", state:{zh:"气",en:"gas"}},
@@ -489,6 +532,7 @@
   const actTitle  = document.getElementById("actTitle");
   const btnStopSpeak = document.getElementById("btnStopSpeak");
   const stopSpeakText = document.getElementById("stopSpeakText");
+  const scrollHint = document.getElementById("scrollHint");
 
   const overlay  = document.getElementById("overlay");
   const modal    = document.getElementById("modal");
@@ -576,7 +620,6 @@
     overlay.classList.add("show");
     overlay.setAttribute("aria-hidden","false");
 
-    // 把焦点给关闭按钮，键盘体验更好
     btnClose.focus({preventScroll:true});
   }
 
@@ -588,15 +631,12 @@
 
   btnClose.addEventListener("click", closeModal);
 
-  // 点击遮罩关闭（但点到弹窗内容不关）
   overlay.addEventListener("mousedown", (e)=>{
     if(e.target === overlay) closeModal();
   });
 
-  // 防止在弹窗内部点击时触发 overlay 逻辑（保险）
   modal.addEventListener("mousedown", (e)=> e.stopPropagation());
 
-  // 表格渲染
   function createCell(el){
     const d = document.createElement("div");
     d.className = "cell " + catClass(el.category);
@@ -703,10 +743,15 @@
     closeText.textContent = zh ? "关闭" : "Close";
     modalHint.textContent = zh ? "提示：点击遮罩或按 Esc 可关闭。" : "Tip: Click outside or press Esc to close.";
 
+    if(scrollHint){
+      scrollHint.textContent = zh
+        ? "手机上可左右滑动查看完整周期表。"
+        : "On phones, swipe left/right to view the full table.";
+    }
+
     renderLegend();
     renderTable();
 
-    // 如果弹窗开着，切换语言时同步刷新弹窗内容
     if(overlay.classList.contains("show") && state.currentElement){
       openModal(state.currentElement);
     }
@@ -717,7 +762,6 @@
     applyLang();
   });
 
-  // Esc 关闭弹窗 + 停止朗读
   window.addEventListener("keydown", (e)=>{
     if(e.key === "Escape"){
       if(overlay.classList.contains("show")) closeModal();
