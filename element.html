@@ -170,11 +170,13 @@
 
     .fgrid{
       display:grid;
-      grid-template-columns: repeat(15, minmax(var(--cellMin), 1fr));
+      /* 关键修复：不要用 1fr（手机上会被拉伸导致背景/格子越界） */
+      grid-template-columns: repeat(15, var(--cellMin));
       gap: var(--gap);
       align-items:stretch;
 
-      min-width: 820px;
+      /* 让 grid 宽度跟内容走，配合外层 .tableScroll 横向滚动 */
+      width: max-content;
     }
 
     /* 分类配色 */
@@ -303,7 +305,7 @@
     /* iPad 竖屏：缩小一点最小宽度，减少滑动需求 */
     @media (min-width: 521px) and (max-width: 900px){
       .grid{ min-width: 860px; }
-      .fgrid{ min-width: 720px; }
+      /* fgrid 现在用固定列宽+max-content，这里无需再设 min-width */
     }
   </style>
 </head>
@@ -566,10 +568,61 @@
     });
   }
 
+  // ===== 详情字段扩展：质子/中子/同位素/Wikipedia =====
+  function massNumberApprox(el){
+    // 尽量从 mass 字段推一个常见的质量数 A（用于“中子数≈A-Z”）
+    if(!el || !el.mass) return null;
+    const s = String(el.mass).trim();
+    // (145) 这种
+    const m1 = s.match(/^\((\d+)\)$/);
+    if(m1) return parseInt(m1[1], 10);
+    // 纯数字或含小数
+    const n = parseFloat(s);
+    if(Number.isFinite(n)) return Math.round(n);
+    return null;
+  }
+
+  const isotopeHints = {
+    // 这里放一些常见、孩子更容易理解/见过的同位素示例；没有的就提示去 Wikipedia 看
+    H:  "¹H (protium), ²H (deuterium), ³H (tritium)",
+    C:  "¹²C, ¹³C, ¹⁴C",
+    N:  "¹⁴N, ¹⁵N",
+    O:  "¹⁶O, ¹⁷O, ¹⁸O",
+    Ne: "²⁰Ne, ²¹Ne, ²²Ne",
+    Mg: "²⁴Mg, ²⁵Mg, ²⁶Mg",
+    Cl: "³⁵Cl, ³⁷Cl",
+    Ar: "³⁶Ar, ³⁸Ar, ⁴⁰Ar",
+    K:  "³⁹K, ⁴⁰K, ⁴¹K",
+    Ca: "⁴⁰Ca, ⁴²Ca, ⁴³Ca, ⁴⁴Ca",
+    Fe: "⁵⁴Fe, ⁵⁶Fe, ⁵⁷Fe, ⁵⁸Fe",
+    Cu: "⁶³Cu, ⁶⁵Cu",
+    I:  "¹²⁷I (stable), ¹³¹I (medical)",
+    U:  "²³⁵U, ²³⁸U"
+  };
+
+  function wikiUrl(el){
+    // English Wikipedia（内容最全）；用英文名生成链接
+    const title = (el?.name_en || el?.symbol || "").trim().replace(/\s+/g, "_");
+    return "https://en.wikipedia.org/wiki/" + encodeURIComponent(title);
+  }
+
   function buildKV(el){
     const kv = [];
+    const A = massNumberApprox(el);
+    const Z = el.Z;
+    const protons = Number.isFinite(Z) ? Z : null;
+    const electrons = Number.isFinite(Z) ? Z : null; // 默认中性原子
+    const neutrons = (Number.isFinite(Z) && Number.isFinite(A)) ? (A - Z) : null;
+
+    const iso = isotopeHints[el.symbol] || null;
+
     if(state.lang==="zh"){
-      kv.push(["原子序数", String(el.Z)]);
+      kv.push(["原子序数 (Z)", String(el.Z)]);
+      kv.push(["质子数", (protons!=null ? String(protons) : "—")]);
+      kv.push(["电子数（中性原子）", (electrons!=null ? String(electrons) : "—")]);
+      kv.push(["质量数 (A, 近似)", (A!=null ? String(A) : "—")]);
+      kv.push(["中子数 (≈A−Z)", (neutrons!=null ? String(neutrons) : "—")]);
+
       kv.push(["元素符号", el.symbol]);
       kv.push(["中文名", el.name_zh]);
       kv.push(["英文名", el.name_en]);
@@ -579,8 +632,16 @@
       kv.push(["相对原子质量", el.mass ?? "—"]);
       kv.push(["电子排布", el.econf ?? "—"]);
       kv.push(["常温物态", el.state?.zh ?? "—"]);
+
+      kv.push(["常见同位素（示例）", iso ? iso : "—（点击下方 Wiki 查看完整同位素表）"]);
+      kv.push(["Wikipedia（英文）", {type:"link", href: wikiUrl(el), text: "打开该元素 Wiki"}]);
     }else{
-      kv.push(["Atomic No.", String(el.Z)]);
+      kv.push(["Atomic number (Z)", String(el.Z)]);
+      kv.push(["Protons", (protons!=null ? String(protons) : "—")]);
+      kv.push(["Electrons (neutral)", (electrons!=null ? String(electrons) : "—")]);
+      kv.push(["Mass number (A, approx.)", (A!=null ? String(A) : "—")]);
+      kv.push(["Neutrons (≈A−Z)", (neutrons!=null ? String(neutrons) : "—")]);
+
       kv.push(["Symbol", el.symbol]);
       kv.push(["English", el.name_en]);
       kv.push(["Chinese", el.name_zh]);
@@ -590,6 +651,9 @@
       kv.push(["Atomic mass", el.mass ?? "—"]);
       kv.push(["Electron config.", el.econf ?? "—"]);
       kv.push(["State (STP)", el.state?.en ?? "—"]);
+
+      kv.push(["Common isotopes (examples)", iso ? iso : "— (see Wikipedia for full isotope list)"]);
+      kv.push(["Wikipedia", {type:"link", href: wikiUrl(el), text: "Open Wikipedia page"}]);
     }
     return kv;
   }
@@ -603,7 +667,19 @@
 
       const vEl = document.createElement("div");
       vEl.className = "v";
-      vEl.textContent = v;
+
+      if(v && typeof v === "object" && v.type === "link" && v.href){
+        const a = document.createElement("a");
+        a.href = v.href;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = v.text || v.href;
+        a.style.color = "rgba(147,197,253,.95)";
+        a.style.textDecoration = "underline";
+        vEl.appendChild(a);
+      }else{
+        vEl.textContent = String(v);
+      }
 
       container.appendChild(kEl);
       container.appendChild(vEl);
